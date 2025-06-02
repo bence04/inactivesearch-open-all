@@ -59,7 +59,7 @@
         document.body.appendChild(overlay);
 
         document.getElementById("confirmYes").onclick = () => {
-            if (document.getElementById("skipConfirmCheckbox").checked) {
+            if (document.getElementById("dontAskAgain").checked) {
                 localStorage.setItem("travianSkipConfirm", "true");
             }
             document.body.removeChild(overlay);
