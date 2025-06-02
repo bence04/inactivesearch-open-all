@@ -78,9 +78,7 @@
 
         showConfirmationDialog(links.length, (confirmed) => {
             if (!confirmed) return;
-            console.log(links);
             links.forEach(link => {
-                console.log(link);
                 window.open(link, '_blank');
             });
         });
