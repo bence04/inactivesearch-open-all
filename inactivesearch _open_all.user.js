@@ -1,105 +1,113 @@
 // ==UserScript==
 // @name         inactivesearch - openAll in new tab
 // @namespace    http://tampermonkey.net/
-// @version      2025-06-01
-// @description  Add a button which open all result in the page on the new tab
+// @version      2026-10-13
+// @description  Add a button which opens all results on the page in new tabs
 // @author       @bence04
+// @match        https://www.inactivesearch.com/*
+// @match        https://inactivesearch.com/*
 // @match        https://www.inactivesearch.it/*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=inactivesearch.it
-// @grant        none
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=inactivesearch.com
+// @grant        GM_openInTab
+// @run-at       document-idle
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
+    // Village links: Travian position details or map coordinates
+    const VILLAGE_LINK_RE = /position_details\.php|karte\.php\?.*[xy]=/i;
+
     function getPositionLinks() {
-        const links = [];
-        document.querySelectorAll('table.table-inactives a[href*="position_details.php"]').forEach(a => {
-            links.push(a.href);
-        });
-        return links;
+        const seen = new Set();
+        const pick = (root) => {
+            root.querySelectorAll('a[href]').forEach(a => {
+                if (VILLAGE_LINK_RE.test(a.href)) seen.add(a.href);
+            });
+        };
+        // Prefer links inside result tables, fall back to the whole page
+        document.querySelectorAll('table').forEach(pick);
+        if (seen.size === 0) pick(document);
+        return [...seen];
+    }
+
+    function openTab(url) {
+        if (typeof GM_openInTab === 'function') {
+            // Not blocked by the popup blocker
+            GM_openInTab(url, { active: false, insert: true, setParent: true });
+        } else {
+            window.open(url, '_blank');
+        }
     }
 
     function showConfirmationDialog(linkCount, callback) {
-        if (localStorage.getItem("travianSkipConfirm") === "true") {
+        if (localStorage.getItem('travianSkipConfirm') === 'true') {
             callback(true);
             return;
         }
 
         const overlay = document.createElement('div');
-        overlay.style.position = 'fixed';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.width = '100%';
-        overlay.style.height = '100%';
-        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
-        overlay.style.zIndex = '9999';
-        overlay.style.display = 'flex';
-        overlay.style.justifyContent = 'center';
-        overlay.style.alignItems = 'center';
-
-        const message = `Are you sure you want to open all (${linkCount}) position details in new tabs?\n\n` +
-            `Notice: Some browsers may block multiple tabs from opening automatically. You might need to allow pop-ups in the top corner after clicking "Always Allow".`;
-
-
+        Object.assign(overlay.style, {
+            position: 'fixed', inset: '0', backgroundColor: 'rgba(0,0,0,0.5)',
+            zIndex: '99999', display: 'flex', justifyContent: 'center', alignItems: 'center'
+        });
 
         const dialog = document.createElement('div');
-        dialog.style.background = '#fff';
-        dialog.style.padding = '20px';
-        dialog.style.borderRadius = '8px';
-        dialog.style.boxShadow = '0 0 10px rgba(0,0,0,0.3)';
+        Object.assign(dialog.style, {
+            background: '#fff', color: '#111', padding: '20px', borderRadius: '8px',
+            boxShadow: '0 0 10px rgba(0,0,0,0.3)', maxWidth: '420px', fontFamily: 'sans-serif'
+        });
         dialog.innerHTML = `
-            <p style="white-space: pre-line;">${message}</p>
-            <label><input type="checkbox" id="dontAskAgain"> Don't ask again</label><br><br>
-            <button id="confirmYes" type="button">Yes, open all</button>
-            <button id="confirmNo" type="button">Cancel</button>
+            <p style="white-space: pre-line; margin-top: 0;">Are you sure you want to open all (${linkCount}) village links in new tabs?</p>
+            <label><input type="checkbox" class="is-dont-ask"> Don't ask again</label><br><br>
+            <button type="button" class="is-yes">Yes, open all</button>
+            <button type="button" class="is-no">Cancel</button>
         `;
 
         overlay.appendChild(dialog);
         document.body.appendChild(overlay);
 
-        document.getElementById("confirmYes").onclick = () => {
-            if (document.getElementById("dontAskAgain").checked) {
-                localStorage.setItem("travianSkipConfirm", "true");
+        dialog.querySelector('.is-yes').onclick = () => {
+            if (dialog.querySelector('.is-dont-ask').checked) {
+                localStorage.setItem('travianSkipConfirm', 'true');
             }
-            document.body.removeChild(overlay);
+            overlay.remove();
             callback(true);
         };
-
-        document.getElementById("confirmNo").onclick = () => {
-            document.body.removeChild(overlay);
+        dialog.querySelector('.is-no').onclick = () => {
+            overlay.remove();
             callback(false);
         };
     }
 
     function openAllLinks() {
         const links = getPositionLinks();
-        if (links.length === 0) return;
-
+        if (links.length === 0) {
+            alert('No village links found on this page.');
+            return;
+        }
         showConfirmationDialog(links.length, (confirmed) => {
-            if (!confirmed) return;
-            links.forEach(link => {
-                window.open(link, '_blank');
-            });
+            if (confirmed) links.forEach(openTab);
         });
     }
 
     function addOpenAllButton() {
-        const container = document.querySelector('.nav.nav-pills.multiple-action.panel');
-        if (!container) return;
+        if (document.getElementById('is-open-all-btn')) return;
 
-        const li = document.createElement('li');
+        // Floating button, independent from the site's layout
         const button = document.createElement('button');
+        button.id = 'is-open-all-btn';
         button.type = 'button';
         button.textContent = 'Open All Villages';
-        button.style.cursor = 'pointer';
-        button.className = 'btn btn-primary';
+        Object.assign(button.style, {
+            position: 'fixed', right: '20px', bottom: '20px', zIndex: '99998',
+            padding: '10px 16px', borderRadius: '8px', border: 'none',
+            background: '#2f7d32', color: '#fff', fontWeight: '600',
+            cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+        });
         button.onclick = openAllLinks;
-
-        li.appendChild(button);
-        container.appendChild(li);
+        document.body.appendChild(button);
     }
 
-    window.addEventListener('load', addOpenAllButton);
-
+    addOpenAllButton();
 })();
